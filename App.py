@@ -79,7 +79,7 @@ def recommend_nmf(user_id, top_n=5):
 # ----------------------------------------------------
 # Streamlit UI
 # ----------------------------------------------------
-st.title("Book Recommendation System    ( Popularity Based + NMF Model )")
+st.title("Book Recommendation System  \n ( Popularity Based + NMF Model )")
 
 user_id = st.number_input("Enter User ID", min_value=1, step=1)
 top_n = st.number_input("Number of Recommendations", min_value=1, max_value=50, value=5)
