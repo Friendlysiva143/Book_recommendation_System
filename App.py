@@ -1,7 +1,6 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-import os
 
 # ----------------------------------------------------
 # Load Model Files
@@ -12,39 +11,48 @@ user_categories = np.load("user_categories.npy", allow_pickle=True)
 book_categories = np.load("book_categories.npy", allow_pickle=True)
 books_df = pd.read_csv("books.csv")
 
-# Load sparse matrix safely (fix for 0-D issue)
+# Load sparse matrix safely
 sparse_matrix = np.load("sparse_matrix.npy", allow_pickle=True)
 if sparse_matrix.ndim == 0:
-    sparse_matrix = sparse_matrix.item()  # extract actual sparse matrix object
+    sparse_matrix = sparse_matrix.item()
 
 # ----------------------------------------------------
 # Mapping dictionaries
 # ----------------------------------------------------
 isbn_to_title = dict(zip(books_df["ISBN"], books_df["Book-Title"]))
-isbn_to_image = dict(zip(books_df["ISBN"], books_df["Image-URL-M"])) \
-                 if "Image-URL-M" in books_df.columns else {}
+isbn_to_image = dict(zip(books_df["ISBN"], books_df.get("Image-URL-M", [])))
 
 # Popular books fallback
 top_books = books_df.head(10)
-
-# Placeholder image
-PLACEHOLDER_PATH = "placeholder.jpg"
 
 # ----------------------------------------------------
 # Recommendation Function
 # ----------------------------------------------------
 def recommend_nmf(user_id, top_n=5):
+    results = []
 
-    # Cold user fallback
+    # Cold user fallback: show popular books
     if user_id not in user_categories:
-        df = top_books.head(top_n).reset_index(drop=True)
-        return df.to_dict(orient="records"), "User not found. Showing popular books."
-    
-    # Find user index
+        for _, row in top_books.head(top_n).iterrows():
+            results.append({
+                "ISBN": row["ISBN"],
+                "Book-Title": row["Book-Title"],
+                "Image": isbn_to_image.get(row["ISBN"], None)
+            })
+        return results, "User not found. Showing popular books."
+
+    # Existing user: NMF recommendation
     try:
         user_idx = np.where(user_categories == user_id)[0][0]
     except:
-        return top_books.head(top_n).to_dict(orient="records"), "User not found."
+        # Fallback if user index not found
+        for _, row in top_books.head(top_n).iterrows():
+            results.append({
+                "ISBN": row["ISBN"],
+                "Book-Title": row["Book-Title"],
+                "Image": isbn_to_image.get(row["ISBN"], None)
+            })
+        return results, "User not found. Showing popular books."
 
     user_vec = W[user_idx]
     scores = np.dot(user_vec, H)
@@ -53,24 +61,17 @@ def recommend_nmf(user_id, top_n=5):
     try:
         rated_books = sparse_matrix[user_idx].nonzero()[1]
         scores[rated_books] = -np.inf
-    except Exception as e:
-        return None, f"Sparse matrix error: {e}"
+    except:
+        pass
 
-    # Top-N indices
     top_idx = np.argsort(scores)[::-1][:top_n]
 
-    results = []
     for idx in top_idx:
         isbn = book_categories[idx]
-        title = isbn_to_title.get(isbn, "Unknown Title")
-        image = isbn_to_image.get(isbn, None)
-        score = round(float(scores[idx]), 3)
-
         results.append({
             "ISBN": isbn,
-            "Book-Title": title,
-            "Image": image,
-            "Score": score
+            "Book-Title": isbn_to_title.get(isbn, "Unknown Title"),
+            "Image": isbn_to_image.get(isbn, None)
         })
 
     return results, None
@@ -100,8 +101,5 @@ if st.button("Recommend"):
                     img_url = book.get("Image")
                     if img_url:
                         st.image(img_url, width=150)
-                    else:
-                        st.image(PLACEHOLDER_PATH, width=150)
-
                     st.write(f"**{book['Book-Title']}**")
                     st.write(f"ISBN: {book['ISBN']}")
